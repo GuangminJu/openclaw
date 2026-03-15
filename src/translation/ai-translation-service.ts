@@ -6,6 +6,11 @@ export class AITranslationService {
   async translate(text: string, fromLang: string, toLang: string): Promise<string> {
     if (!text?.trim()) return text;
     
+    // Skip translation if not needed
+    const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+    if (fromLang === 'zh' && !hasChinese) return text; // No Chinese to translate
+    if (fromLang === 'en' && hasChinese) return text; // Already Chinese
+    
     const key = `${fromLang}:${toLang}:${text}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
