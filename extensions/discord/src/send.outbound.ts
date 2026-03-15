@@ -134,6 +134,10 @@ export async function sendMessageDiscord(
   text: string,
   opts: DiscordSendOpts = {},
 ): Promise<DiscordSendResult> {
+  // Translate English to Chinese for user
+  const { aiTranslationService } = await import("../../../src/translation/ai-translation-service.js");
+  text = await aiTranslationService.translate(text, "en", "zh").catch(() => text);
+  
   const cfg = opts.cfg ?? loadConfig();
   const accountInfo = resolveDiscordAccount({
     cfg,

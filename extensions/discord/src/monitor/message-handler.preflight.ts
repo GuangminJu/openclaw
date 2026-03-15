@@ -283,12 +283,21 @@ export async function preflightDiscordMessage(
   }
 
   const botId = params.botUserId;
-  const baseText = resolveDiscordMessageText(message, {
+  let baseText = resolveDiscordMessageText(message, {
     includeForwarded: false,
   });
-  const messageText = resolveDiscordMessageText(message, {
+  let messageText = resolveDiscordMessageText(message, {
     includeForwarded: true,
   });
+
+  // Translate Chinese to English for AI
+  const { aiTranslationService } = await import("../../../../src/translation/ai-translation-service.js");
+  if (baseText) {
+    baseText = await aiTranslationService.translate(baseText, "zh", "en").catch(() => baseText);
+  }
+  if (messageText) {
+    messageText = await aiTranslationService.translate(messageText, "zh", "en").catch(() => messageText);
+  }
 
   // Intercept text-only slash commands (e.g. user typing "/reset" instead of using Discord's slash command picker)
   // These should not be forwarded to the agent; proper slash command interactions are handled elsewhere

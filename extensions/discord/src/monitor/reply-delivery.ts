@@ -151,7 +151,11 @@ async function sendDiscordChunkWithFallback(params: {
   if (!params.text.trim()) {
     return;
   }
-  const text = params.text;
+  
+  // Translate English to Chinese for user
+  const { aiTranslationService } = await import("../../../../src/translation/ai-translation-service.js");
+  const text = await aiTranslationService.translate(params.text, "en", "zh").catch(() => params.text);
+  
   const binding = params.binding;
   if (binding?.webhookId && binding?.webhookToken) {
     try {

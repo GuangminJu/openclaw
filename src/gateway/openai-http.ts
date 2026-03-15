@@ -29,6 +29,7 @@ import { sendJson, setSseHeaders, writeDone } from "./http-common.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import { resolveGatewayRequestContext } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
+import { translationService } from "../translation/argos-service.js";
 
 type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -318,13 +319,13 @@ export const __testOnlyOpenAiHttp = {
   resolveOpenAiChatCompletionsLimits,
 };
 
-function buildAgentPrompt(
+async function buildAgentPrompt(
   messagesUnknown: unknown,
   activeUserMessageIndex: number,
-): {
+): Promise<{
   message: string;
   extraSystemPrompt?: string;
-} {
+}> {
   const messages = asMessages(messagesUnknown);
 
   const systemParts: string[] = [];
@@ -354,12 +355,17 @@ function buildAgentPrompt(
 
     // Keep the image-only placeholder scoped to the active user turn so we don't
     // mention historical image-only turns whose bytes are intentionally not replayed.
-    const messageContent =
+    let messageContent =
       normalizedRole === "user" && !content && hasImage && i === activeUserMessageIndex
         ? IMAGE_ONLY_USER_MESSAGE
         : content;
     if (!messageContent) {
       continue;
+    }
+
+    // Translate user messages from Chinese to English
+    if (normalizedRole === "user" && messageContent) {
+      messageContent = await translationService.translate(messageContent, "zh", "en").catch(() => messageContent);
     }
 
     const name = typeof msg.name === "string" ? msg.name.trim() : "";
@@ -440,7 +446,7 @@ export async function handleOpenAiHttpRequest(
     useMessageChannelHeader: true,
   });
   const activeTurnContext = resolveActiveTurnContext(payload.messages);
-  const prompt = buildAgentPrompt(payload.messages, activeTurnContext.activeUserMessageIndex);
+  const prompt = await buildAgentPrompt(payload.messages, activeTurnContext.activeUserMessageIndex);
   let images: ImageContent[] = [];
   try {
     images = await resolveImagesForRequest(activeTurnContext, limits);
@@ -482,7 +488,10 @@ export async function handleOpenAiHttpRequest(
     try {
       const result = await agentCommandFromIngress(commandInput, defaultRuntime, deps);
 
-      const content = resolveAgentResponseText(result);
+      let content = resolveAgentResponseText(result);
+      
+      // Translate AI response from English to Chinese
+      content = await translationService.translate(content, "en", "zh").catch(() => content);
 
       sendJson(res, 200, {
         id: runId,
@@ -522,7 +531,7 @@ export async function handleOpenAiHttpRequest(
     }
 
     if (evt.stream === "assistant") {
-      const content = resolveAssistantStreamDeltaText(evt) ?? "";
+      let content = resolveAssistantStreamDeltaText(evt) ?? "";
       if (!content) {
         return;
       }
@@ -532,12 +541,23 @@ export async function handleOpenAiHttpRequest(
         writeAssistantRoleChunk(res, { runId, model });
       }
 
-      sawAssistantDelta = true;
-      writeAssistantContentChunk(res, {
-        runId,
-        model,
-        content,
-        finishReason: null,
+      // Translate streaming content from English to Chinese (async, fire and forget)
+      void translationService.translate(content, "en", "zh").then((translated) => {
+        sawAssistantDelta = true;
+        writeAssistantContentChunk(res, {
+          runId,
+          model,
+          content: translated,
+          finishReason: null,
+        });
+      }).catch(() => {
+        sawAssistantDelta = true;
+        writeAssistantContentChunk(res, {
+          runId,
+          model,
+          content,
+          finishReason: null,
+        });
       });
       return;
     }
@@ -572,7 +592,10 @@ export async function handleOpenAiHttpRequest(
           writeAssistantRoleChunk(res, { runId, model });
         }
 
-        const content = resolveAgentResponseText(result);
+        let content = resolveAgentResponseText(result);
+        
+        // Translate fallback response from English to Chinese
+        content = await translationService.translate(content, "en", "zh").catch(() => content);
 
         sawAssistantDelta = true;
         writeAssistantContentChunk(res, {
