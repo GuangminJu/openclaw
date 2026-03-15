@@ -29,7 +29,6 @@ import { sendJson, setSseHeaders, writeDone } from "./http-common.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import { resolveGatewayRequestContext } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
-import { translationService } from "../translation/argos-service.js";
 
 type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -365,7 +364,8 @@ async function buildAgentPrompt(
 
     // Translate user messages from Chinese to English
     if (normalizedRole === "user" && messageContent) {
-      messageContent = await translationService.translate(messageContent, "zh", "en").catch(() => messageContent);
+      const { aiTranslationService } = await import("../translation/ai-translation-service.js");
+      messageContent = await aiTranslationService.translate(messageContent, "zh", "en").catch(() => messageContent);
     }
 
     const name = typeof msg.name === "string" ? msg.name.trim() : "";
@@ -491,7 +491,8 @@ export async function handleOpenAiHttpRequest(
       let content = resolveAgentResponseText(result);
       
       // Translate AI response from English to Chinese
-      content = await translationService.translate(content, "en", "zh").catch(() => content);
+      const { aiTranslationService } = await import("../translation/ai-translation-service.js");
+      content = await aiTranslationService.translate(content, "en", "zh").catch(() => content);
 
       sendJson(res, 200, {
         id: runId,
@@ -541,22 +542,24 @@ export async function handleOpenAiHttpRequest(
         writeAssistantRoleChunk(res, { runId, model });
       }
 
-      // Translate streaming content from English to Chinese (async, fire and forget)
-      void translationService.translate(content, "en", "zh").then((translated) => {
-        sawAssistantDelta = true;
-        writeAssistantContentChunk(res, {
-          runId,
-          model,
-          content: translated,
-          finishReason: null,
-        });
-      }).catch(() => {
-        sawAssistantDelta = true;
-        writeAssistantContentChunk(res, {
-          runId,
-          model,
-          content,
-          finishReason: null,
+      // Translate streaming content from English to Chinese
+      import("../translation/ai-translation-service.js").then(({ aiTranslationService }) => {
+        aiTranslationService.translate(content, "en", "zh").then((translated: string) => {
+          sawAssistantDelta = true;
+          writeAssistantContentChunk(res, {
+            runId,
+            model,
+            content: translated,
+            finishReason: null,
+          });
+        }).catch(() => {
+          sawAssistantDelta = true;
+          writeAssistantContentChunk(res, {
+            runId,
+            model,
+            content,
+            finishReason: null,
+          });
         });
       });
       return;
@@ -595,7 +598,8 @@ export async function handleOpenAiHttpRequest(
         let content = resolveAgentResponseText(result);
         
         // Translate fallback response from English to Chinese
-        content = await translationService.translate(content, "en", "zh").catch(() => content);
+        const { aiTranslationService } = await import("../translation/ai-translation-service.js");
+        content = await aiTranslationService.translate(content, "en", "zh").catch(() => content);
 
         sawAssistantDelta = true;
         writeAssistantContentChunk(res, {
