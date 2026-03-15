@@ -27,6 +27,7 @@ export class AITranslationService {
       message: prompt,
       sessionKey: 'internal-translation',
       agentId: 'main',
+      deliver: false,
       to: undefined,
     });
 
